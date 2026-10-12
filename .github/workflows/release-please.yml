@@ -35,3 +35,51 @@ jobs:
           manifest-file: .release-please-manifest.json
           release-labels: release-please:autorelease:pending
           skip-github-release: false
+
+  # 给 release-please 开出来的 PR 自动挂上 auto-merge。
+  #
+  # ⚠️ 为什么需要这个 job：release-please 只负责「开 PR」，合并那一步设计上要人点。
+  #   仓库的 allow_auto_merge 已于 2026-10-12 打开，这里在 PR 出来后主动去启用，
+  #   条件满足即自动合并 —— 这一步做完，日常发版零人工。
+  #   仍然会等 branch protection 要求的 check（本仓只有 `check` 一个）通过才合：
+  #   「合并不需要人」不等于「合并不需要门」。
+  #
+  # 靠 head ref 前缀筛（release-please--），不硬编码完整分支名 —— 组件名、
+  # include-component-in-tag 都会影响它生成的分支名，写死等于埋雷。
+  # 找不到 PR 就安静退出：这个 workflow 在「没有待发布内容」时也会跑。
+  auto-merge:
+    needs: release-please
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - name: 对 release PR 启用 auto-merge
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              head: `${context.repo.owner}:release-please--`
+            })
+            if (prs.length === 0) {
+              core.info('没有待处理的 release PR —— 本次推送没有可发布内容')
+              return
+            }
+            for (const pr of prs) {
+              core.info(`对 #${pr.number} 启用 auto-merge: ${pr.title}`)
+              try {
+                await github.rest.pulls.enablePullRequestAutoMerge({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pr.number,
+                  merge_method: 'squash'
+                })
+              } catch (err) {
+                // 仓库没开 allow_auto_merge 时会 400。报出来但不失败整个 job ——
+                // 「没挂上自动合并」不该让 release-please 的动作看起来失败。
+                core.warning(`#${pr.number} 启用 auto-merge 失败: ${err.message}`)
+              }
+            }
