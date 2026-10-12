@@ -74,17 +74,21 @@ jobs:
               core.info(`开放 PR ${prs.length} 个，其中 release PR 0 个 —— 本次推送没有可发布内容`)
               return
             }
+            // ⚠️ 启用 auto-merge **只有 GraphQL 接口**，REST 里没有对应端点 ——
+            //   写 github.rest.pulls.enablePullRequestAutoMerge 会得到
+            //   "is not a function"。而且它吃的是 PR 的 node_id，不是 PR 号。
+            const mutation = `mutation ($prId: ID!) {
+              enablePullRequestAutoMerge(input: { pullRequestId: $prId, mergeMethod: SQUASH }) {
+                clientMutationId
+              }
+            }`
             for (const pr of releasePrs) {
               core.info(`对 #${pr.number} 启用 auto-merge: ${pr.title}`)
               try {
-                await github.rest.pulls.enablePullRequestAutoMerge({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  pull_number: pr.number,
-                  merge_method: 'squash'
-                })
+                await github.graphql(mutation, { prId: pr.node_id })
+                core.info(`#${pr.number} 已挂上 auto-merge`)
               } catch (err) {
-                // 仓库没开 allow_auto_merge 时会 400。报出来但不失败整个 job ——
+                // 仓库没开 allow_auto_merge 时会报错。报出来但不失败整个 job ——
                 // 「没挂上自动合并」不该让 release-please 的动作看起来失败。
                 core.warning(`#${pr.number} 启用 auto-merge 失败: ${err.message}`)
               }
