@@ -1,0 +1,79 @@
+name: Release Artifact Rebuild
+
+# release-please 的 Release PR 只改源码（package.json / src/meta.ts / CHANGELOG），
+# **不重编产物**。而 lib/client.js 里 baked 着 PLUGIN_VERSION，于是每次发版 PR 的 CI
+# 都会红在这一条上：
+#
+#   ✗ lib/client.js 里 PLUGIN_VERSION (0.17.4) ≠ package.json (0.17.5)
+#     → 跑 npm run build 让 bundle 跟上；release PR 只改源码不重编，浏览器读到的是旧版本号
+#
+# 这个坑至少手工踩过两次（0.17.2、0.17.4）。它本该由流程自己解决 ——
+# 本 workflow 就是那个解法：PR 一开就重编，产物变了就推回去。
+#
+# 推回用 GITHUB_TOKEN：按 GitHub 的设计，用它推送**不会**再触发本 workflow，
+# 所以不会自激；下一次是靠「重编后产物没变 → 不提交」自然收敛。
+#
+# 局限：GITHUB_TOKEN 的推送不产生 Actions 触发的连锁。若哪天真需要它触发下游
+# workflow，得换成 PAT（仓库里已有 secrets.PR_PAT）。
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  rebuild:
+    # 只处理 release-please 的发版分支，其他 PR 一律不碰。
+    if: startsWith(github.event.pull_request.head.ref, 'release-please--')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 必须是 PR 的头分支。默认 checkout 在 merge commit 上，
+          # 在那里提交推不到 PR 分支。
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 重编产物
+        run: npm run build
+
+      - name: 产物有变化就推回 PR 分支
+        run: |
+          set -euo pipefail
+          # 只看真源编译产物 —— CHANGELOG / manifest 之类 release-please 自己管。
+          if git diff --quiet -- lib src/meta.ts; then
+            echo "产物已是最新，无需提交"
+            exit 0
+          fi
+          echo "产物落后于源码，重编结果："
+          git diff --stat -- lib src/meta.ts
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib src/meta.ts
+          # commit message 走 heredoc：一行里同时嵌 " 和 $(...) 时，块标量里
+          # 的嵌套引号极易踩坑（这里已经炸过一次 —— 消息里的空行直接打断 YAML）。
+          VERSION=$(node -p "require('./package.json').version")
+          cat > /tmp/commit-msg.txt <<MSG
+          chore(release): 重编 lib 对齐 ${VERSION}
+
+          release-please 只改源码不重编产物，而 lib/client.js 里 baked 着 PLUGIN_VERSION。
+          不补这一步，发版 PR 会卡在版本闸门上（0.17.2、0.17.4 两次手工踩过）。
+          本 commit 由 Release Artifact Rebuild workflow 自动生成。
+          MSG
+          git commit -F /tmp/commit-msg.txt
+          git push origin "HEAD:refs/heads/${GITHUB_HEAD_REF}"
+
+      - name: 复跑门禁确认真的绿了
+        if: success()
+        run: npm run check

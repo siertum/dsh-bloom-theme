@@ -58,17 +58,23 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            // ⚠️ pulls.list 的 head 参数是**精确匹配**（`user:ref`），不是前缀匹配。
+            //   写成 `owner:release-please--` 匹配不到
+            //   `release-please--branches--main--components--dsh-bloom-theme`，
+            //   列表会返回空 —— 实测踩过一次，日志安静地打「没有待处理的 release PR」。
+            //   所以这里拉全量开放 PR，在 JS 里按 ref 前缀筛。
             const { data: prs } = await github.rest.pulls.list({
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: 'open',
-              head: `${context.repo.owner}:release-please--`
+              per_page: 100
             })
-            if (prs.length === 0) {
-              core.info('没有待处理的 release PR —— 本次推送没有可发布内容')
+            const releasePrs = prs.filter((pr) => pr.head.ref.startsWith('release-please--'))
+            if (releasePrs.length === 0) {
+              core.info(`开放 PR ${prs.length} 个，其中 release PR 0 个 —— 本次推送没有可发布内容`)
               return
             }
-            for (const pr of prs) {
+            for (const pr of releasePrs) {
               core.info(`对 #${pr.number} 启用 auto-merge: ${pr.title}`)
               try {
                 await github.rest.pulls.enablePullRequestAutoMerge({
