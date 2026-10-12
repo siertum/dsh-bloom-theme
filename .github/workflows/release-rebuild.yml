@@ -54,7 +54,6 @@ jobs:
 
       - name: 产物有变化就推回 PR 分支
         env:
-          PR_PAT: ${{ secrets.PR_PAT }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
@@ -79,9 +78,10 @@ jobs:
           本 commit 由 Release Artifact Rebuild workflow 自动生成。
           MSG
           git commit -F /tmp/commit-msg.txt
-          # 走 PAT 推，见文件头的说明：用 GITHUB_TOKEN 推会把后续 CI 变成
-          # action_required，等于自愈机制把门堵死。
-          git remote set-url origin "https://x-access-token:${PR_PAT}@github.com/dsh-env-inspector/dsh-env-inspector.git"
+          # 不用自己拼 URL：actions/checkout 已经把 token（这里是 PR_PAT）写进
+          # git config 的 http.extraheader 了，直接 git push 用的就是它。
+          # 上一版多写了一行 git remote set-url 覆盖成 x-access-token 形式，
+          # 结果 404 "Repository not found" —— 自作聪明把 checkout 配好的凭据弄没了。
           git push origin "HEAD:refs/heads/${HEAD_REF}"
 
       - name: 复跑门禁确认真的绿了
