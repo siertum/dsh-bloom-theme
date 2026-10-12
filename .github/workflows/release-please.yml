@@ -2,11 +2,10 @@ name: Release Please
 
 # 自动维护 version / CHANGELOG / tag / GitHub Release。
 # 提交走 Conventional Commits（feat:/fix:/docs:/ci:…）即可触发：
-# - 每个合并到 main 的 commit 会被 release-please 收集到"待发布"清单
-# - 它每周自动开（或更新）一个 Release PR：PR 里更新 package.json 版本号、CHANGELOG.md、
-#   重新生成 release-please-manifest.json
-# - PR 合并后：自动打 tag、创建 GitHub Release（用 CHANGELOG 当 notes）、然后触发 publish.yml 发 npm
-# 想跳版本号或回滚：手动 close 这个 PR 并评论 /autorelease:skip 或 /autorelease:major/minor。
+# - 每个合并到 main 的 commit 会被收集到"待发布"清单
+# - 它每周自动开（或更新）一个 Release PR
+# - PR 合并后：自动打 tag、创建 GitHub Release，然后触发 publish.yml 发 npm
+# 想跳版本号或回滚：close 这个 PR 并评论 /autorelease:skip 或 /autorelease:major/minor。
 # 完整协议见 https://github.com/googleapis/release-please/blob/main/docs/cli.md
 
 on:
@@ -26,21 +25,20 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@v4
         with:
-          # 默认 GITHUB_TOKEN 没有创建/批准 PR 权限（仓库需在 Settings → Actions 勾
-          # "Allow GitHub Actions to create and approve pull requests" 才放行）。
-          # 改用 cs vault 里的 personal PAT（secret://github/personal-pat，够开 PR），
-          # 设为 repo Actions secret `PR_PAT`，workflow 直接用它——不需要在仓库 setting 上勾选项。
+          # 用 personal PAT（cs vault: secret://github/personal-pat，仓库 secret 名 PR_PAT），
+          # 而不是默认 GITHUB_TOKEN —— 后者要仓库额外勾
+          # "Allow GitHub Actions to create and approve pull requests" 才开得了 PR，
+          # 少这一步整条链路就不动。
           token: ${{ secrets.PR_PAT }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           skip-github-release: false
 
-  # 给 release-please 开出来的 PR 自动挂上 auto-merge。
+  # 给 release-please 开出来的 PR 自动挂 auto-merge。
   #
   # ⚠️ 为什么需要这个 job：release-please 只负责「开 PR」，合并那一步设计上要人点。
-  #   仓库的 allow_auto_merge 已于 2026-10-12 打开，这里在 PR 出来后主动去启用，
-  #   条件满足即自动合并 —— 这一步做完，日常发版零人工。
-  #   仍然会等 branch protection 要求的 check（本仓只有 `check` 一个）通过才合：
+  #   仓库的 allow_auto_merge 已开，这里在 PR 出来后主动去启用，条件满足即自动合并 ——
+  #   这一步做完，日常发版零人工。仍然会等 branch protection 要求的 check 通过才合：
   #   「合并不需要人」不等于「合并不需要门」。
   #
   # 靠 head ref 前缀筛（release-please--），不硬编码完整分支名 —— 组件名、
@@ -60,12 +58,11 @@ jobs:
           #   enablePullRequestAutoMerge 是「以用户身份」执行的 GraphQL mutation，
           #   GitHub App token 调它会拿到 "Resource not accessible by integration" ——
           #   workflow 报 success、日志里一条 warning，PR 上 autoMergeRequest 却是 null。
-          #   （前面还踩过一层：github.rest 里根本没有这个方法，必须走 github.graphql。）
           github-token: ${{ secrets.PR_PAT }}
           script: |
             // ⚠️ pulls.list 的 head 参数是**精确匹配**（`user:ref`），不是前缀匹配。
             //   写成 `owner:release-please--` 匹配不到
-            //   `release-please--branches--main--components--dsh-bloom-theme`，
+            //   `release-please--branches--main--components--<name>`，
             //   列表会返回空 —— 实测踩过一次，日志安静地打「没有待处理的 release PR」。
             //   所以这里拉全量开放 PR，在 JS 里按 ref 前缀筛。
             const { data: prs } = await github.rest.pulls.list({
@@ -87,8 +84,31 @@ jobs:
                 clientMutationId
               }
             }`
+            // ⚠️ **必须等 check 跑完再挂**。GitHub 拒绝对「unstable」的 PR 启用
+            //   auto-merge（返回 "Pull request is in unstable status"）。
+            //   而 release-please 一开 PR，这个 job 就立刻启动 —— CI 那时必然还在跑。
+            //   所以不轮询就挂，等于四个仓库里三个必然静默失败。
+            const PENDING = new Set(['queued', 'in_progress', 'pending', 'waiting'])
+            async function waitForChecks(pr) {
+              const deadline = Date.now() + 15 * 60 * 1000
+              while (Date.now() < deadline) {
+                const { data } = await github.rest.checks.listForRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: pr.head.sha,
+                  per_page: 100
+                })
+                const running = data.check_runs.filter((r) => PENDING.has(r.status))
+                if (running.length === 0) return true
+                core.info(`#${pr.number} 还有 ${running.length} 个 check 在跑（${running.map((r) => r.name).join(', ')}），等 20s`)
+                await new Promise((resolve) => setTimeout(resolve, 20000))
+              }
+              core.warning(`#${pr.number} 等 check 超过 15 分钟，本轮不挂 auto-merge`)
+              return false
+            }
             for (const pr of releasePrs) {
               core.info(`对 #${pr.number} 启用 auto-merge: ${pr.title}`)
+              if (!(await waitForChecks(pr))) continue
               try {
                 await github.graphql(mutation, { prId: pr.node_id })
                 core.info(`#${pr.number} 已挂上 auto-merge`)
