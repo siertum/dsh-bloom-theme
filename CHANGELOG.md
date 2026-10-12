@@ -13,6 +13,18 @@
 
      今后 CHANGELOG 只由 release-please 生成，不再手写（见 CONTRIBUTING 发版流程）。 -->
 
+## [0.17.6](https://github.com/webkubor/dsh-bloom-theme/compare/v0.17.5...v0.17.6) (2026-10-12)
+
+
+### 🐛 Bug Fixes
+
+* **release:** auto-merge 挂不上时兜底直接合并 ([82c1b58](https://github.com/webkubor/dsh-bloom-theme/commit/82c1b58d07b29927b8334d9803bb13f89c69f36e))
+* **release:** blocked 不再一读到就判死 ([b848b5b](https://github.com/webkubor/dsh-bloom-theme/commit/b848b5b1dbf4eb0e1ef1891ce5c3fcf775556948))
+* **release:** mergeable_state 是异步的，unknown 要等而不是放弃 ([37eb794](https://github.com/webkubor/dsh-bloom-theme/commit/37eb79419348364c4457d4d1c36b029e36c8a721))
+* **release:** 以 mergeable_state 为门，不再等所有 check 跑完 ([eb415bc](https://github.com/webkubor/dsh-bloom-theme/commit/eb415bc9c60c8e7fc3b181a80e803d0198e51709))
+* **release:** 删掉 checks.listForRef 那层判据，只认 mergeable_state ([76d9685](https://github.com/webkubor/dsh-bloom-theme/commit/76d9685c72d7943f3ec5b56da0a3d807241874fa))
+* **release:** 等 check 跑完再挂 auto-merge ([0ec4e4c](https://github.com/webkubor/dsh-bloom-theme/commit/0ec4e4cc1a9a9ecfc30b12cd7210962185f26e2c))
+
 ## [0.17.5](https://github.com/webkubor/dsh-bloom-theme/compare/v0.17.4...v0.17.5) (2026-10-12)
 
 
