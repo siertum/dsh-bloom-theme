@@ -76,13 +76,21 @@ const ICON_VOTE = icon('<rect x="1.9" y="1.9" width="10.2" height="10.2" rx="2.4
 const ICON_CHAT = icon('<path d="M12.1 8.1a1.8 1.8 0 0 1-1.8 1.8H5.6L2.9 12.1V3.7a1.8 1.8 0 0 1 1.8-1.8h5.6a1.8 1.8 0 0 1 1.8 1.8z"/>')
 const ICON_SHARE = icon('<circle cx="10.5" cy="3.3" r="1.6"/><circle cx="3.5" cy="7" r="1.6"/><circle cx="10.5" cy="10.7" r="1.6"/><path d="M4.9 6.2l4.2-2.2M4.9 7.8l4.2 2.2"/>')
 
-/** 分享文案：对方原样贴进自己的 DSH 就能装上，不需要再问「怎么装」。 */
+/** 分享文案：对方原样贴进自己的 DSH 就能装上，不需要再问「怎么装」。
+ *
+ *  ⚠️ 2026-10-12 改：原文案写死 `--profile web` 和 `~/.dsh/profiles/web/`。那个
+ *  profile 已于 2026-10-02 退役，当前宿主是桌面端 app（profile `desktop`，由 app
+ *  独占托管，CLI 的 `dsh plugin --profile desktop` 会被直接拒绝）。照原文案操作的人
+ *  只会得到一条报错。两条路都写出来：app 里走插件管理，自建 profile 走 CLI 且 profile
+ *  名必须自己填（写死任何具体名字都是给一份必然过期的指令）。
+ */
 const SHARE_TEXT = [
   'Bloom —— DSH 的中国风配色主题：10 套诗词命名的莫兰迪配色，深浅色自适应，顶栏一键切换。',
-  '装到你的 DSH（profile 名按自己的改，默认 web）：',
-  '  1) dsh plugin --profile web add dsh-bloom-theme',
-  '  2) 把 "dsh-bloom-theme" 加进 ~/.dsh/profiles/web/package.json 的 dsh.profile.bundles',
-  '  3) 重启 DSH',
+  '装到你的 DSH：',
+  '  · 桌面端 app：在应用内的「插件管理」里搜 dsh-bloom-theme 直接装',
+  '    （app 独占托管 desktop profile，CLI 的 dsh plugin --profile desktop 会被拒）',
+  '  · 自建 CLI profile：dsh plugin --profile <你的profile名> add dsh-bloom-theme',
+  '    然后确认 "dsh-bloom-theme" 在该 profile 的 package.json 的 dsh.profile.bundles 里（plugin add 会自动加），重启 DSH',
   '仓库：https://github.com/webkubor/dsh-bloom-theme',
 ].join('\n')
 

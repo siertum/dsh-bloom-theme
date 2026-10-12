@@ -142,7 +142,7 @@ function watchCursorGlow() {
 
 /** ── 更新检测：npm 有新版本时提醒老用户 ─────────────────────────────────────
  *
- * 背景：主题插件装在 ~/.dsh/profiles/web/node_modules 里，用户不会主动升级；
+ * 背景：主题插件装在 DSH profile 的 node_modules 里，用户不会主动升级；
  * 发了新版（新变体/修 bug）老用户无感知。这里做被动提醒。
  *
  * 机制（全部浏览器端，零 node 侧依赖）：
@@ -183,7 +183,11 @@ function watchCursorGlow() {
    * 带上具体版本号一次绕开全部：不依赖 pnpm 怎么解析 latest、不受 lock 影响，
    * 而且对用户更明确 —— 命令里写的版本号和横幅标题里那个是同一个。
    */
-  const updateCmd = (v) => 'dsh plugin --profile web add ' + PLUGIN_ID + '@' + v
+  // ⚠️ 2026-10-12 改：profile 名原来写死 `web`。该 profile 已于 2026-10-02 退役，
+   // 当前宿主是桌面端 app（profile `desktop`，app 独占托管、CLI 会被拒）—— 这条命令
+   // 复制出去执行必然报错。这里给占位符：具体 profile 名由用户按自己实际的填，
+   // 桌面端用户则改走 app 的插件管理（下方 release 说明里已指向 Release 页）。
+  const updateCmd = (v) => 'dsh plugin --profile <你的profile名> add ' + PLUGIN_ID + '@' + v
   const RELEASES_URL = 'https://github.com/webkubor/dsh-bloom-theme/releases'
   const zh = (navigator.language || '').toLowerCase().startsWith('zh')
 
