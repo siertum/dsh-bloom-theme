@@ -10,11 +10,14 @@ name: Release Artifact Rebuild
 # 这个坑至少手工踩过两次（0.17.2、0.17.4）。它本该由流程自己解决 ——
 # 本 workflow 就是那个解法：PR 一开就重编，产物变了就推回去。
 #
-# 推回用 GITHUB_TOKEN：按 GitHub 的设计，用它推送**不会**再触发本 workflow，
-# 所以不会自激；下一次是靠「重编后产物没变 → 不提交」自然收敛。
+# ⚠️ **推送必须用 PR_PAT，不能用 GITHUB_TOKEN** —— 这是实测撞出来的：
+#   用 GITHUB_TOKEN 推到发版分支后，GitHub 把该分支上后续所有 `pull_request`
+#   workflow 的 actor 记成 github-actions[bot]，而 bot 触发的 workflow 一律
+#   `action_required`（要人点批准）。结果就是：产物修好了，CI 却再也跑不起来 ——
+#   自愈机制自己把门堵死了。
+#   换成 PR_PAT 推，actor 回到本人，pull_request workflow 正常触发。
 #
-# 局限：GITHUB_TOKEN 的推送不产生 Actions 触发的连锁。若哪天真需要它触发下游
-# workflow，得换成 PAT（仓库里已有 secrets.PR_PAT）。
+# 收敛：产物没变化就不提交，所以不会自激（推了也不改东西）。
 
 on:
   pull_request:
@@ -22,7 +25,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   pull-requests: read
 
 jobs:
@@ -37,6 +40,7 @@ jobs:
           # 在那里提交推不到 PR 分支。
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
+          token: ${{ secrets.PR_PAT }}
 
       - uses: actions/setup-node@v4
         with:
@@ -49,6 +53,9 @@ jobs:
         run: npm run build
 
       - name: 产物有变化就推回 PR 分支
+        env:
+          PR_PAT: ${{ secrets.PR_PAT }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
           # 只看真源编译产物 —— CHANGELOG / manifest 之类 release-please 自己管。
@@ -59,7 +66,7 @@ jobs:
           echo "产物落后于源码，重编结果："
           git diff --stat -- lib src/meta.ts
           git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+{{HOSTNAME_a34a8136ede5e2fc}}"
           git add lib src/meta.ts
           # commit message 走 heredoc：一行里同时嵌 " 和 $(...) 时，块标量里
           # 的嵌套引号极易踩坑（这里已经炸过一次 —— 消息里的空行直接打断 YAML）。
@@ -72,8 +79,10 @@ jobs:
           本 commit 由 Release Artifact Rebuild workflow 自动生成。
           MSG
           git commit -F /tmp/commit-msg.txt
-          git push origin "HEAD:refs/heads/${GITHUB_HEAD_REF}"
+          # 走 PAT 推，见文件头的说明：用 GITHUB_TOKEN 推会把后续 CI 变成
+          # action_required，等于自愈机制把门堵死。
+          git remote set-url origin "https://x-access-token:${PR_PAT}@github.com/dsh-env-inspector/dsh-env-inspector.git"
+          git push origin "HEAD:refs/heads/${HEAD_REF}"
 
       - name: 复跑门禁确认真的绿了
-        if: success()
         run: npm run check
